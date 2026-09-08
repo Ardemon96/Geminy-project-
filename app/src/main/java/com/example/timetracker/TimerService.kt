@@ -52,7 +52,6 @@ class TimerService : Service() {
         currentCategory = category
         isRunning.value = true
         
-        // Гарантированно переводим службу в Foreground
         startForeground(NOTIFICATION_ID, buildNotification(timeInSeconds.value))
 
         timerJob?.cancel()
@@ -86,7 +85,8 @@ class TimerService : Service() {
                     ActivityLog(
                         title = titleToSave,
                         category = categoryToSave,
-                        durationSeconds = secondsToSave
+                        durationSeconds = secondsToSave,
+                        timestamp = System.currentTimeMillis()
                     )
                 )
             }

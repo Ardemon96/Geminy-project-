@@ -33,6 +33,8 @@ import com.example.timetracker.data.ActivityLog
 import com.example.timetracker.data.AppDatabase
 import com.example.timetracker.data.CategoryEntity
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity() {
 
@@ -72,7 +74,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    // Запрос разрешения на показ уведомления (для Android 13+)
                     RequestNotificationPermission()
                     MainScreen(timerServiceProvider = { timerService })
                 }
@@ -119,7 +120,7 @@ fun MainScreen(timerServiceProvider: () -> TimerService?) {
     val customCategories by dao.getAllCategories().collectAsState(initial = emptyList())
 
     val defaultCategories = listOf("Работа", "Чтение", "Развлечения", "Учеба/Программирование", "Быт", "Отдых")
-    val allCategories = (defaultCategories + customCategories.map { it.name }).distinct()
+    var selectedCategory by remember { mutableStateOf("Работа") }
 
     Scaffold(
         topBar = {
@@ -153,7 +154,14 @@ fun MainScreen(timerServiceProvider: () -> TimerService?) {
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                0 -> TimerTab(timerServiceProvider, allCategories, dao)
+                0 -> TimerTab(
+                    timerServiceProvider = timerServiceProvider,
+                    defaultCategories = defaultCategories,
+                    customCategories = customCategories,
+                    dao = dao,
+                    selectedCategory = selectedCategory,
+                    onCategorySelected = { selectedCategory = it }
+                )
                 1 -> AnalyticsTab(logs)
                 2 -> HistoryTab(logs, dao)
             }
@@ -165,21 +173,24 @@ fun MainScreen(timerServiceProvider: () -> TimerService?) {
 @Composable
 fun TimerTab(
     timerServiceProvider: () -> TimerService?,
-    categories: List<String>,
-    dao: com.example.timetracker.data.ActivityDao
+    defaultCategories: List<String>,
+    customCategories: List<CategoryEntity>,
+    dao: com.example.timetracker.data.ActivityDao,
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit
 ) {
     val context = LocalContext.current
     val timerService = timerServiceProvider()
 
     var activityTitle by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(categories.firstOrNull() ?: "Работа") }
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryInput by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    val allCategories = (defaultCategories + customCategories.map { it.name }).distinct()
 
     val timeInSeconds by timerService?.timeInSeconds?.collectAsState() ?: remember { mutableLongStateOf(0L) }
     val isRunning by timerService?.isRunning?.collectAsState() ?: remember { mutableStateOf(false) }
-
-    var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var newCategoryInput by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
 
     val hours = timeInSeconds / 3600
     val minutes = (timeInSeconds % 3600) / 60
@@ -209,8 +220,10 @@ fun TimerTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Категория:", style = MaterialTheme.typography.bodyMedium)
-                IconButton(onClick = { showAddCategoryDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Добавить категорию")
+                TextButton(onClick = { showCategoryDialog = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Управление")
                 }
             }
 
@@ -218,10 +231,10 @@ fun TimerTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(categories) { cat ->
+                items(allCategories) { cat ->
                     FilterChip(
                         selected = selectedCategory == cat,
-                        onClick = { selectedCategory = cat },
+                        onClick = { onCategorySelected(cat) },
                         label = { Text(cat, fontSize = 12.sp) }
                     )
                 }
@@ -291,45 +304,151 @@ fun TimerTab(
         }
     }
 
-    if (showAddCategoryDialog) {
+    if (showCategoryDialog) {
         AlertDialog(
-            onDismissRequest = { showAddCategoryDialog = false },
-            title = { Text("Новая категория") },
+            onDismissRequest = { showCategoryDialog = false },
+            title = { Text("Управление категориями") },
             text = {
-                OutlinedTextField(
-                    value = newCategoryInput,
-                    onValueChange = { newCategoryInput = it },
-                    label = { Text("Название категории") },
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (newCategoryInput.isNotBlank()) {
-                        scope.launch {
-                            dao.insertCategory(CategoryEntity(newCategoryInput.trim()))
-                            selectedCategory = newCategoryInput.trim()
-                            newCategoryInput = ""
-                            showAddCategoryDialog = false
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newCategoryInput,
+                        onValueChange = { newCategoryInput = it },
+                        label = { Text("Новая категория") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (newCategoryInput.isNotBlank()) {
+                                val trimmed = newCategoryInput.trim()
+                                if (!allCategories.contains(trimmed)) {
+                                    scope.launch {
+                                        dao.insertCategory(CategoryEntity(trimmed))
+                                        onCategorySelected(trimmed)
+                                        newCategoryInput = ""
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Добавить")
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Пользовательские категории:", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (customCategories.isEmpty()) {
+                        Text("Нет пользовательских категорий", color = Color.Gray, fontSize = 12.sp)
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            items(customCategories) { customCat ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(customCat.name, style = MaterialTheme.typography.bodyMedium)
+                                    IconButton(onClick = {
+                                        scope.launch {
+                                            dao.deleteCategory(customCat.name)
+                                            if (selectedCategory == customCat.name) {
+                                                onCategorySelected(defaultCategories.first())
+                                            }
+                                        }
+                                    }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Удалить",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
-                }) {
-                    Text("Добавить")
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showAddCategoryDialog = false }) {
-                    Text("Отмена")
+            confirmButton = {
+                TextButton(onClick = { showCategoryDialog = false }) {
+                    Text("Готово")
                 }
             }
         )
     }
 }
 
+enum class TimePeriod {
+    ALL_TIME, DAY, WEEK
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsTab(logs: List<ActivityLog>) {
-    val totalSeconds = logs.sumOf { it.durationSeconds }
-    val categoryGrouped = logs.groupBy { it.category }
+    var selectedPeriod by remember { mutableStateOf(TimePeriod.DAY) }
+    var selectedCalendar by remember { mutableStateOf(Calendar.getInstance()) }
+
+    val dateFormat = remember { SimpleDateFormat("dd MMMM yyyy", Locale.getDefault()) }
+    val weekFormat = remember { SimpleDateFormat("dd MMM", Locale.getDefault()) }
+
+    val filteredLogs = remember(logs, selectedPeriod, selectedCalendar.timeInMillis) {
+        when (selectedPeriod) {
+            TimePeriod.ALL_TIME -> logs
+            TimePeriod.DAY -> {
+                val startOfDay = (selectedCalendar.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+
+                val endOfDay = (selectedCalendar.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }.timeInMillis
+
+                logs.filter { it.timestamp in startOfDay..endOfDay }
+            }
+            TimePeriod.WEEK -> {
+                val startOfWeek = (selectedCalendar.clone() as Calendar).apply {
+                    firstDayOfWeek = Calendar.MONDAY
+                    set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+
+                val endOfWeek = (selectedCalendar.clone() as Calendar).apply {
+                    firstDayOfWeek = Calendar.MONDAY
+                    set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }.timeInMillis
+
+                logs.filter { it.timestamp in startOfWeek..endOfWeek }
+            }
+        }
+    }
+
+    val totalSeconds = filteredLogs.sumOf { it.durationSeconds }
+    val categoryGrouped = filteredLogs.groupBy { it.category }
         .mapValues { entry -> entry.value.sumOf { it.durationSeconds } }
 
     Column(
@@ -337,8 +456,83 @@ fun AnalyticsTab(logs: List<ActivityLog>) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text("Аналитика и Графики", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(16.dp))
+        Text("Аналитика", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = selectedPeriod == TimePeriod.DAY,
+                onClick = { selectedPeriod = TimePeriod.DAY },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+            ) {
+                Text("День")
+            }
+            SegmentedButton(
+                selected = selectedPeriod == TimePeriod.WEEK,
+                onClick = { selectedPeriod = TimePeriod.WEEK },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+            ) {
+                Text("Неделя")
+            }
+            SegmentedButton(
+                selected = selectedPeriod == TimePeriod.ALL_TIME,
+                onClick = { selectedPeriod = TimePeriod.ALL_TIME },
+                shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+            ) {
+                Text("Всё время")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (selectedPeriod != TimePeriod.ALL_TIME) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    val newCal = selectedCalendar.clone() as Calendar
+                    if (selectedPeriod == TimePeriod.DAY) {
+                        newCal.add(Calendar.DAY_OF_YEAR, -1)
+                    } else {
+                        newCal.add(Calendar.WEEK_OF_YEAR, -1)
+                    }
+                    selectedCalendar = newCal
+                }) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Назад")
+                }
+
+                val titleText = if (selectedPeriod == TimePeriod.DAY) {
+                    dateFormat.format(selectedCalendar.time)
+                } else {
+                    val start = (selectedCalendar.clone() as Calendar).apply {
+                        firstDayOfWeek = Calendar.MONDAY
+                        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    }
+                    val end = (selectedCalendar.clone() as Calendar).apply {
+                        firstDayOfWeek = Calendar.MONDAY
+                        set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+                    }
+                    "${weekFormat.format(start.time)} — ${weekFormat.format(end.time)}"
+                }
+
+                Text(titleText, style = MaterialTheme.typography.titleMedium)
+
+                IconButton(onClick = {
+                    val newCal = selectedCalendar.clone() as Calendar
+                    if (selectedPeriod == TimePeriod.DAY) {
+                        newCal.add(Calendar.DAY_OF_YEAR, 1)
+                    } else {
+                        newCal.add(Calendar.WEEK_OF_YEAR, 1)
+                    }
+                    selectedCalendar = newCal
+                }) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Вперед")
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -352,12 +546,19 @@ fun AnalyticsTab(logs: List<ActivityLog>) {
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         Text("Распределение по категориям:", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(12.dp))
 
         if (totalSeconds == 0L) {
-            Text("Нет данных для отображения графиков", color = Color.Gray)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("За выбранный период нет данных", color = Color.Gray)
+            }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(categoryGrouped.toList()) { (category, seconds) ->
@@ -370,7 +571,10 @@ fun AnalyticsTab(logs: List<ActivityLog>) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(category, style = MaterialTheme.typography.bodyMedium)
-                            Text("${(percentage * 100).toInt()}% (${seconds / 60} мин)")
+                            val catH = seconds / 3600
+                            val catM = (seconds % 3600) / 60
+                            val timeStr = if (catH > 0) "${catH}ч ${catM}м" else "${catM} мин"
+                            Text("${(percentage * 100).toInt()}% ($timeStr)")
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Box(
@@ -397,6 +601,7 @@ fun AnalyticsTab(logs: List<ActivityLog>) {
 @Composable
 fun HistoryTab(logs: List<ActivityLog>, dao: com.example.timetracker.data.ActivityDao) {
     val scope = rememberCoroutineScope()
+    val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
 
     Column(
         modifier = Modifier
@@ -423,7 +628,8 @@ fun HistoryTab(logs: List<ActivityLog>, dao: com.example.timetracker.data.Activi
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(log.title, style = MaterialTheme.typography.titleMedium)
-                                Text("${log.category} • ${log.durationSeconds / 60} мин", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                val dateStr = dateFormat.format(Date(log.timestamp))
+                                Text("${log.category} • ${log.durationSeconds / 60} мин\n$dateStr", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                             }
                             IconButton(onClick = {
                                 scope.launch { dao.deleteLog(log.id) }
