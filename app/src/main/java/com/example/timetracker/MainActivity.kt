@@ -1,4 +1,4 @@
-
+package com.example.timetracker
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,8 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-// Обязательные импорты для решения ваших ошибок:
 import androidx.compose.ui.unit.sp
+// Импортируем тему вашего проекта
 import com.example.timetracker.ui.theme.TimeTrackerTheme
 
 class MainActivity : ComponentActivity() {
@@ -35,8 +35,7 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
     Text(
         text = "Hello $name!",
         modifier = modifier,
-        // Использование .sp теперь работает благодаря корректному импорту
-        fontSize = 20.sp 
+        fontSize = 20.sp
     )
 }
 
