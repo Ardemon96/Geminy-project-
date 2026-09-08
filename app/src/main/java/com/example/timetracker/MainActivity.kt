@@ -1,10 +1,15 @@
 package com.example.timetracker
 
+import android.Manifest
 import android.content.*
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -23,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.timetracker.data.ActivityLog
 import com.example.timetracker.data.AppDatabase
 import com.example.timetracker.data.CategoryEntity
@@ -66,8 +72,36 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    // Запрос разрешения на показ уведомления (для Android 13+)
+                    RequestNotificationPermission()
                     MainScreen(timerServiceProvider = { timerService })
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun RequestNotificationPermission() {
+    val context = LocalContext.current
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        var hasPermission by remember {
+            mutableStateOf(
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            )
+        }
+
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+            onResult = { isGranted -> hasPermission = isGranted }
+        )
+
+        LaunchedEffect(Unit) {
+            if (!hasPermission) {
+                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -84,8 +118,7 @@ fun MainScreen(timerServiceProvider: () -> TimerService?) {
     val logs by dao.getAllLogs().collectAsState(initial = emptyList())
     val customCategories by dao.getAllCategories().collectAsState(initial = emptyList())
 
-    // Категории по умолчанию с учетом изменений
-    val defaultCategories = listOf("Учеба/Программирование", "Работа", "Чтение", "Развлечения", "Быт", "Отдых")
+    val defaultCategories = listOf("Работа", "Чтение", "Развлечения", "Учеба/Программирование", "Быт", "Отдых")
     val allCategories = (defaultCategories + customCategories.map { it.name }).distinct()
 
     Scaffold(
@@ -135,6 +168,7 @@ fun TimerTab(
     categories: List<String>,
     dao: com.example.timetracker.data.ActivityDao
 ) {
+    val context = LocalContext.current
     val timerService = timerServiceProvider()
 
     var activityTitle by remember { mutableStateOf("") }
@@ -218,10 +252,19 @@ fun TimerTab(
         ) {
             Button(
                 onClick = {
+                    val intent = Intent(context, TimerService::class.java)
                     if (isRunning) {
                         timerService?.pauseTimer()
                     } else {
-                        timerService?.startTimer(activityTitle, selectedCategory)
+                        intent.action = TimerService.ACTION_START
+                        intent.putExtra(TimerService.EXTRA_TITLE, activityTitle)
+                        intent.putExtra(TimerService.EXTRA_CATEGORY, selectedCategory)
+                        
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(intent)
+                        } else {
+                            context.startService(intent)
+                        }
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -248,7 +291,6 @@ fun TimerTab(
         }
     }
 
-    // Диалог ввода пользовательской категории
     if (showAddCategoryDialog) {
         AlertDialog(
             onDismissRequest = { showAddCategoryDialog = false },

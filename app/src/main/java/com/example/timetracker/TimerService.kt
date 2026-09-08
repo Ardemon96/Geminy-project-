@@ -10,20 +10,17 @@ import com.example.timetracker.data.ActivityLog
 import com.example.timetracker.data.AppDatabase
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 class TimerService : Service() {
 
     private val binder = TimerBinder()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    var timeInSeconds = MutableStateFlow(0L)
-        private set
-    var isRunning = MutableStateFlow(false)
-        private set
+    val timeInSeconds = MutableStateFlow(0L)
+    val isRunning = MutableStateFlow(false)
 
     var currentTitle = ""
-    var currentCategory = "Учеба/Программирование"
+    var currentCategory = "Работа"
 
     private var timerJob: Job? = null
 
@@ -38,10 +35,24 @@ class TimerService : Service() {
         createNotificationChannel()
     }
 
-    fun startTimer(title: String, category: String) {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        if (action == ACTION_START) {
+            val title = intent.getStringExtra(EXTRA_TITLE) ?: ""
+            val category = intent.getStringExtra(EXTRA_CATEGORY) ?: "Работа"
+            startTimerInternal(title, category)
+        } else if (action == ACTION_STOP) {
+            stopAndSaveTimer()
+        }
+        return START_STICKY
+    }
+
+    fun startTimerInternal(title: String, category: String) {
         currentTitle = title
         currentCategory = category
         isRunning.value = true
+        
+        // Гарантированно переводим службу в Foreground
         startForeground(NOTIFICATION_ID, buildNotification(timeInSeconds.value))
 
         timerJob?.cancel()
@@ -57,6 +68,7 @@ class TimerService : Service() {
     fun pauseTimer() {
         isRunning.value = false
         timerJob?.cancel()
+        updateNotification(timeInSeconds.value)
     }
 
     fun stopAndSaveTimer() {
@@ -80,10 +92,10 @@ class TimerService : Service() {
             }
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Если приложение смахнули из недавних — незамедлительно сохраняем прогресс
         if (timeInSeconds.value > 0) {
             stopAndSaveTimer()
         }
@@ -116,12 +128,13 @@ class TimerService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Активный таймер: $formatted")
-            .setContentText("Категория: $currentCategory")
+            .setContentTitle("Таймер: $formatted")
+            .setContentText("Категория: $currentCategory | $currentTitle")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
@@ -129,7 +142,7 @@ class TimerService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Activity Timer Service",
+                "Activity Timer Tracker",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)
@@ -140,5 +153,9 @@ class TimerService : Service() {
     companion object {
         const val CHANNEL_ID = "activity_timer_channel"
         const val NOTIFICATION_ID = 101
+        const val ACTION_START = "ACTION_START"
+        const val ACTION_STOP = "ACTION_STOP"
+        const val EXTRA_TITLE = "EXTRA_TITLE"
+        const val EXTRA_CATEGORY = "EXTRA_CATEGORY"
     }
 }
