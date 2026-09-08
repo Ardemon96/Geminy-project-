@@ -30,4 +30,4 @@ jobs:
 
     # Основная сборка
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --no-daemon
+      run: ./gradlew assembleDebug --no-daemon --rerun-tasks
