@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Time Tracker"
+rootProject.name = "Geminy-project"
 include(":app")
