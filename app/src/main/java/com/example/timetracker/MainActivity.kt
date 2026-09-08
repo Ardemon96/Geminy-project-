@@ -1,12 +1,15 @@
 package com.example.timetracker
 
+import android.content.*
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,16 +25,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.timetracker.data.ActivityLog
 import com.example.timetracker.data.AppDatabase
-import kotlinx.coroutines.delay
+import com.example.timetracker.data.CategoryEntity
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private var timerService: TimerService? = null
+    private var isBound = false
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as TimerService.TimerBinder
+            timerService = binder.getService()
+            isBound = true
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            isBound = false
+            timerService = null
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Intent(this, TimerService::class.java).also { intent ->
+            bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isBound) {
+            unbindService(connection)
+            isBound = false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen()
+                    MainScreen(timerServiceProvider = { timerService })
                 }
             }
         }
@@ -40,17 +75,23 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(timerServiceProvider: () -> TimerService?) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val db = remember { AppDatabase.getDatabase(context) }
     val dao = db.activityDao()
+
     val logs by dao.getAllLogs().collectAsState(initial = emptyList())
+    val customCategories by dao.getAllCategories().collectAsState(initial = emptyList())
+
+    // Категории по умолчанию с учетом изменений
+    val defaultCategories = listOf("Учеба/Программирование", "Работа", "Чтение", "Развлечения", "Быт", "Отдых")
+    val allCategories = (defaultCategories + customCategories.map { it.name }).distinct()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Activity & Time Tracker") },
+                title = { Text("Activity Tracker") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
         },
@@ -79,7 +120,7 @@ fun MainScreen() {
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                0 -> TimerTab(dao)
+                0 -> TimerTab(timerServiceProvider, allCategories, dao)
                 1 -> AnalyticsTab(logs)
                 2 -> HistoryTab(logs, dao)
             }
@@ -89,20 +130,22 @@ fun MainScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
-    var timeInSeconds by remember { mutableLongStateOf(0L) }
-    var isRunning by remember { mutableStateOf(false) }
-    var activityTitle by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("Учеба/Программирование") }
-    val categories = listOf("Учеба/Программирование", "Музыка", "Философия", "Быт", "Отдых")
-    val scope = rememberCoroutineScope()
+fun TimerTab(
+    timerServiceProvider: () -> TimerService?,
+    categories: List<String>,
+    dao: com.example.timetracker.data.ActivityDao
+) {
+    val timerService = timerServiceProvider()
 
-    LaunchedEffect(isRunning) {
-        while (isRunning) {
-            delay(1000L)
-            timeInSeconds++
-        }
-    }
+    var activityTitle by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(categories.firstOrNull() ?: "Работа") }
+
+    val timeInSeconds by timerService?.timeInSeconds?.collectAsState() ?: remember { mutableLongStateOf(0L) }
+    val isRunning by timerService?.isRunning?.collectAsState() ?: remember { mutableStateOf(false) }
+
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryInput by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
     val hours = timeInSeconds / 3600
     val minutes = (timeInSeconds % 3600) / 60
@@ -120,20 +163,28 @@ fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
             OutlinedTextField(
                 value = activityTitle,
                 onValueChange = { activityTitle = it },
-                label = { Text("Название активности (напр. Java/Spring)") },
+                label = { Text("Название активности") },
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Text("Категория:", style = MaterialTheme.typography.bodyMedium)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                categories.take(3).forEach { cat ->
+                Text("Категория:", style = MaterialTheme.typography.bodyMedium)
+                IconButton(onClick = { showAddCategoryDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Добавить категорию")
+                }
+            }
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(categories) { cat ->
                     FilterChip(
                         selected = selectedCategory == cat,
                         onClick = { selectedCategory = cat },
@@ -143,7 +194,6 @@ fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
             }
         }
 
-        // Крупное табло
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -162,13 +212,18 @@ fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
             }
         }
 
-        // Управление
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             Button(
-                onClick = { isRunning = !isRunning },
+                onClick = {
+                    if (isRunning) {
+                        timerService?.pauseTimer()
+                    } else {
+                        timerService?.startTimer(activityTitle, selectedCategory)
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -181,21 +236,8 @@ fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
 
             OutlinedButton(
                 onClick = {
-                    if (timeInSeconds > 0) {
-                        val titleToSave = activityTitle.ifBlank { "Без названия" }
-                        scope.launch {
-                            dao.insertLog(
-                                ActivityLog(
-                                    title = titleToSave,
-                                    category = selectedCategory,
-                                    durationSeconds = timeInSeconds
-                                )
-                            )
-                            isRunning = false
-                            timeInSeconds = 0L
-                            activityTitle = ""
-                        }
-                    }
+                    timerService?.stopAndSaveTimer()
+                    activityTitle = ""
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -204,6 +246,41 @@ fun TimerTab(dao: com.example.timetracker.data.ActivityDao) {
                 Text("Сохранить")
             }
         }
+    }
+
+    // Диалог ввода пользовательской категории
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("Новая категория") },
+            text = {
+                OutlinedTextField(
+                    value = newCategoryInput,
+                    onValueChange = { newCategoryInput = it },
+                    label = { Text("Название категории") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newCategoryInput.isNotBlank()) {
+                        scope.launch {
+                            dao.insertCategory(CategoryEntity(newCategoryInput.trim()))
+                            selectedCategory = newCategoryInput.trim()
+                            newCategoryInput = ""
+                            showAddCategoryDialog = false
+                        }
+                    }
+                }) {
+                    Text("Добавить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
     }
 }
 

@@ -13,6 +13,11 @@ data class ActivityLog(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "categories")
+data class CategoryEntity(
+    @PrimaryKey val name: String
+)
+
 @Dao
 interface ActivityDao {
     @Query("SELECT * FROM activity_logs ORDER BY timestamp DESC")
@@ -23,9 +28,19 @@ interface ActivityDao {
 
     @Query("DELETE FROM activity_logs WHERE id = :id")
     suspend fun deleteLog(id: Long)
+
+    // Категории
+    @Query("SELECT * FROM categories")
+    fun getAllCategories(): Flow<List<CategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCategory(category: CategoryEntity)
+
+    @Delete
+    suspend fun deleteCategory(category: CategoryEntity)
 }
 
-@Database(entities = [ActivityLog::class], version = 1, exportSchema = false)
+@Database(entities = [ActivityLog::class, CategoryEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun activityDao(): ActivityDao
 
@@ -39,7 +54,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "activity_tracker_db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }
