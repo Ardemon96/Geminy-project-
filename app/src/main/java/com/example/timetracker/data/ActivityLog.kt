@@ -9,5 +9,5 @@ data class ActivityLog(
     val title: String,
     val category: String,
     val durationSeconds: Long,
-    val timestamp: Long = System.currentTimeMillis() // Время сохранения записи для сортировки по дням/неделям
+    val timestamp: Long = System.currentTimeMillis()
 )
