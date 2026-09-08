@@ -1,7 +1,10 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.kapt)
+    // Заменяем kapt на ksp (убедитесь, что псевдоним плагина есть в gradle/libs.versions.toml)
+    alias(libs.plugins.ksp) 
+    // Если вы НЕ используете Version Catalogs для KSP, можно записать напрямую:
+    // id("com.google.devtools.ksp") version "2.0.0-1.0.21"
 }
 
 android {
@@ -35,9 +38,8 @@ android {
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
+    // При использовании Kotlin 2.0.0 встроен новый плагин Compose Compiler, 
+    // поэтому блок composeOptions.kotlinCompilerExtensionVersion больше не нужен!
 }
 
 dependencies {
@@ -57,5 +59,7 @@ dependencies {
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
+    
+    // Заменили kapt на ksp:
+    ksp("androidx.room:room-compiler:$roomVersion")
 }
