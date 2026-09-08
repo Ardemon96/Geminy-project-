@@ -1,8 +1,11 @@
 [versions]
-agp = "8.2.2"
-kotlin = "1.9.22"
+agp = "8.4.2"
+kotlin = "2.0.0"
+ksp = "2.0.0-1.0.24"
+
+[libraries]
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
