@@ -20,8 +20,7 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Автоматическая установка и запуск Gradle без завязки на gradle-wrapper.jar
-    - name: Setup and Execute Gradle
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: 8.7
