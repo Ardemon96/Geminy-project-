@@ -1,0 +1,3 @@
+<application
+    android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+    <!-- or android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" -->
