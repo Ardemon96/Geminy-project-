@@ -42,7 +42,9 @@ class TimerService : Service() {
                 val category = intent.getStringExtra(EXTRA_CATEGORY) ?: "Работа"
                 startTimerInternal(title, category)
             }
-            ACTION_STOP -> stopAndSaveTimer()
+            ACTION_STOP -> {
+                stopAndSaveTimer()
+            }
         }
         return START_STICKY
     }
@@ -119,11 +121,21 @@ class TimerService : Service() {
         val secs = totalSeconds % 60
         val formatted = String.format("%02d:%02d:%02d", hours, minutes, secs)
 
-        val intent = Intent(this, MainActivity::class.java).apply {
+        // Интент при нажатии на само уведомление (открывает приложение)
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+        val contentPendingIntent = PendingIntent.getActivity(
+            this, 0, contentIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Интент для кнопки "Стоп" в трее
+        val stopIntent = Intent(this, TimerService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -132,9 +144,15 @@ class TimerService : Service() {
             .setContentText("Категория: $currentCategory | $currentTitle")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(contentPendingIntent)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            // Добавляем кнопку остановки в шторку уведомления
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Стоп и сохранить",
+                stopPendingIntent
+            )
             .build()
     }
 
