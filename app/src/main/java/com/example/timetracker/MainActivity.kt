@@ -38,7 +38,8 @@ import java.util.*
 
 class MainActivity : ComponentActivity() {
 
-    private var timerService: TimerService? = null
+    var timerService by mutableStateOf<TimerService?>(null)
+        private set
     private var isBound = false
 
     private val connection = object : ServiceConnection {
@@ -191,6 +192,18 @@ fun TimerTab(
 
     val timeInSeconds by timerService?.timeInSeconds?.collectAsState() ?: remember { mutableLongStateOf(0L) }
     val isRunning by timerService?.isRunning?.collectAsState() ?: remember { mutableStateOf(false) }
+
+    // Синхронизируем поля при подключении сервиса или возобновлении экрана если таймер активен
+    LaunchedEffect(timerService?.currentTitle, timerService?.currentCategory) {
+        timerService?.let {
+            if (it.currentTitle.isNotBlank()) {
+                activityTitle = it.currentTitle
+            }
+            if (it.currentCategory.isNotBlank()) {
+                onCategorySelected(it.currentCategory)
+            }
+        }
+    }
 
     val hours = timeInSeconds / 3600
     val minutes = (timeInSeconds % 3600) / 60

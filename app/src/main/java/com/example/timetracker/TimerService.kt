@@ -36,13 +36,13 @@ class TimerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        if (action == ACTION_START) {
-            val title = intent.getStringExtra(EXTRA_TITLE) ?: ""
-            val category = intent.getStringExtra(EXTRA_CATEGORY) ?: "Работа"
-            startTimerInternal(title, category)
-        } else if (action == ACTION_STOP) {
-            stopAndSaveTimer()
+        when (intent?.action) {
+            ACTION_START -> {
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: ""
+                val category = intent.getStringExtra(EXTRA_CATEGORY) ?: "Работа"
+                startTimerInternal(title, category)
+            }
+            ACTION_STOP -> stopAndSaveTimer()
         }
         return START_STICKY
     }
@@ -68,6 +68,7 @@ class TimerService : Service() {
         isRunning.value = false
         timerJob?.cancel()
         updateNotification(timeInSeconds.value)
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     fun stopAndSaveTimer() {
@@ -77,6 +78,7 @@ class TimerService : Service() {
 
         pauseTimer()
         timeInSeconds.value = 0L
+        currentTitle = ""
 
         if (secondsToSave > 0) {
             serviceScope.launch {
@@ -91,7 +93,6 @@ class TimerService : Service() {
                 )
             }
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
@@ -103,16 +104,13 @@ class TimerService : Service() {
     }
 
     override fun onDestroy() {
-        if (timeInSeconds.value > 0) {
-            stopAndSaveTimer()
-        }
         serviceScope.cancel()
         super.onDestroy()
     }
 
     private fun updateNotification(seconds: Long) {
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(seconds))
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildNotification(seconds))
     }
 
     private fun buildNotification(totalSeconds: Long): Notification {
@@ -121,7 +119,9 @@ class TimerService : Service() {
         val secs = totalSeconds % 60
         val formatted = String.format("%02d:%02d:%02d", hours, minutes, secs)
 
-        val intent = Intent(this, MainActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
